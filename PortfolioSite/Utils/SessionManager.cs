@@ -9,6 +9,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
+using System.Data.Entity;
 
 namespace PortfolioSite.Utils
 {
@@ -39,6 +40,14 @@ namespace PortfolioSite.Utils
             get
             {
                 return DependencyResolver.Resolve<ILog>();
+            }
+        }
+
+        private PortfolioApiMediator pfApiMediator
+        {
+            get
+            {
+                return DependencyResolver.Resolve<PortfolioApiMediator>();
             }
         }
 
@@ -93,55 +102,20 @@ namespace PortfolioSite.Utils
         }
         #endregion
 
-        private void ContextExec(Action<SiteAuthDataContext> exec)
+        private async Task ContextExec(Func<PortfolioTokenDBEntities, Task> exec)
         {
             if (string.IsNullOrWhiteSpace(_ctxConnstring))
             {
                 throw new DataConnectionNotConfiguredException("The data connection has not been configured for the session manager");
             }
 
-            var bt = new Thread(new ParameterizedThreadStart((cancelToken) =>
+            using (PortfolioTokenDBEntities ctx = new PortfolioTokenDBEntities(_ctxConnstring))
             {
-                SiteAuthDataContext ctx = null;
-
-                if (!(cancelToken is CancelToken))
-                {
-                    logger.Warn("Invalid cancellation token provided");
-                }
-
-                try
-                {
-                    using (ctx = new SiteAuthDataContext(_ctxConnstring))
-                    {
-                        exec(ctx);
-                    }
-                }
-                catch (ThreadAbortException ex)
-                {
-                    if (!ThreadManager.Current.IsSafeAbort)
-                    {
-                        logger.Warn("Unsafe abortion of database access", ex);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    logger.Error("Exception on database access", ex);
-                }
-                finally
-                {
-                    if (ctx != null)
-                    {
-                        ctx.Dispose();
-                    }
-                }
-            }));
-
-            ThreadManager.Current.AddThread(new ThreadWrapper(bt, new CancelToken()));
-
-            bt.Start(_ctxConnstring);
+                await exec(ctx);
+            }
         }
 
-        private async Task<T> ContextExec<T>(Func<SiteAuthDataContext,Task<T>> exec)
+        private async Task<T> ContextExec<T>(Func<PortfolioTokenDBEntities, Task<T>> exec)
         {
             if (string.IsNullOrWhiteSpace(_ctxConnstring))
             {
@@ -149,11 +123,11 @@ namespace PortfolioSite.Utils
             }
 
             T ret = default(T);
-            SiteAuthDataContext ctx = null;
+            PortfolioTokenDBEntities ctx = null;
 
             try
             {
-                using (ctx = new SiteAuthDataContext(_ctxConnstring))
+                using (ctx = new PortfolioTokenDBEntities(_ctxConnstring))
                 {
                     ret = await exec(ctx);
                 }
@@ -161,13 +135,6 @@ namespace PortfolioSite.Utils
             catch (Exception ex)
             {
                 logger.Error("Failure on database contextual execution", ex);
-            }
-            finally
-            {
-                if (ctx != null)
-                {
-                    ctx.Dispose();
-                }
             }
 
             return ret;
@@ -181,34 +148,36 @@ namespace PortfolioSite.Utils
         /// <returns>The result of the login</returns>
         public async Task<LoginResult> TryLogin(string userName, string password)
         {
-            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password))
-            {
-                return new LoginResult(false);
-            }
-
-            var user = PortfolioApiMediator.GetUser(userName);
-
-            if (user == null)
-            {
-                return new LoginResult(false);
-            }
-
-            var doesPasswordMatch = SecurityUtil.VerifyPassword(password, user.Salt, user.Password);
             LoginResult result = new LoginResult(false);
 
+            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password))
+            {
+                return result;
+            }
+
+            var userResponse = await pfApiMediator.GetUserResponse(userName);
+
+            if (userResponse == null || userResponse.Data == null)
+            {
+                return result;
+            }
+
+            var user = userResponse.Data;
+            var doesPasswordMatch = SecurityUtil.VerifyPassword(password, user.Salt, user.Password);
 
             result = await ContextExec(async (ctx) =>
             {
                 var token = Guid.NewGuid().ToString("N");
 
-                ctx.UserSessions.InsertOnSubmit(new UserSession
+                ctx.UserSessions.Add(new UserSession
                 {
                     UserId = user.UserId,
                     Expiration = GetSessionExpirationTime(),
                     Token = token,
                     IsExpired = false,
                 });
-                ctx.SubmitChanges();
+
+                await ctx.SaveChangesAsync();
 
                 return new LoginResult(true, token);
             });
@@ -220,19 +189,22 @@ namespace PortfolioSite.Utils
         /// Logs out a user
         /// </summary>
         /// <param name="authToken">The auth token associated with the session that is being terminated</param>
-        public void Logout(string authToken)
+        public async Task<bool> Logout(string authToken)
         {
             if (string.IsNullOrWhiteSpace(authToken) || authToken.Length != 32)
             {
-                return;
+                return false;
             }
             
-            ContextExec((ctx) =>
+            var ret = await ContextExec(async (ctx) =>
             {
-                var session = ctx.UserSessions.SingleOrDefault(v => v.Token == authToken);
+                var session = await ctx.UserSessions.SingleOrDefaultAsync(v => v.Token == authToken);
                 session.IsExpired = true;
-                ctx.SubmitChanges();
+                await ctx.SaveChangesAsync();
+                return true;
             });
+
+            return ret;
         }
 
         /// <summary>
@@ -240,9 +212,24 @@ namespace PortfolioSite.Utils
         /// </summary>
         /// <param name="authToken">The auth token</param>
         /// <returns>Indicator of whether or not the token is valid</returns>
-        public bool IsTokenValid(string authToken)
+        public async Task<bool> IsTokenValid(string authToken)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrWhiteSpace(authToken))
+            {
+                return false;
+            }
+
+            var result = await ContextExec((ctx) =>
+            {
+                return new Task<bool>(() =>
+                {
+                    var session = ctx.UserSessions.SingleOrDefault(v => v.Token == authToken);
+
+                    return session != null && !IsSessionExpired(session);
+                });
+            });
+
+            return result;
         }
 
         /// <summary>
@@ -250,20 +237,37 @@ namespace PortfolioSite.Utils
         /// </summary>
         /// <param name="authToken">The auth token</param>
         /// <returns>Success indicator</returns>
-        public bool TryRefreshToken(string authToken)
+        public async Task RefreshToken(string authToken)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrWhiteSpace(authToken))
+            {
+                return;
+            }
+
+            await ContextExec(async (ctx) =>
+            {
+                var session = await ctx.UserSessions.SingleOrDefaultAsync(v => !IsSessionExpired(v) && v.Token == authToken);
+
+                if (session != null)
+                {
+                    session.Expiration = GetSessionExpirationTime();
+                    await ctx.SaveChangesAsync();
+                }
+            });
+
+            return;
         }
 
         #region Helper
-        private bool IsSessionExpired(DateTime expTime)
+        private bool IsSessionExpired(UserSession session)
         {
-            return expTime <= DateTime.Now;
+            return session.IsExpired || session.Expiration <= DateTime.Now;
         }
 
         private DateTime GetSessionExpirationTime()
         {
             return DateTime.Now + _sessionLength;
         }
+        #endregion
     }
 }

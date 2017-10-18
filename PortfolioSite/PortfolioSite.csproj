@@ -65,11 +65,14 @@
       <HintPath>..\packages\Microsoft.CodeDom.Providers.DotNetCompilerPlatform.1.0.5\lib\net45\Microsoft.CodeDom.Providers.DotNetCompilerPlatform.dll</HintPath>
     </Reference>
     <Reference Include="Microsoft.CSharp" />
+    <Reference Include="RestSharp, Version=105.2.3.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\RestSharp.105.2.3\lib\net46\RestSharp.dll</HintPath>
+    </Reference>
     <Reference Include="SandyModels, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\SandyModels.1.0.2\lib\SandyModels.dll</HintPath>
+      <HintPath>..\packages\SandyModels.1.0.3\lib\SandyModels.dll</HintPath>
     </Reference>
     <Reference Include="SandyUtils, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\SandyUtils.1.0.1\lib\SandyUtils.dll</HintPath>
+      <HintPath>..\packages\SandyUtils.1.0.3\lib\SandyUtils.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Data" />
@@ -78,6 +81,8 @@
     <Reference Include="System.Net.Http.Formatting, Version=5.2.3.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.AspNet.WebApi.Client.5.2.3\lib\net45\System.Net.Http.Formatting.dll</HintPath>
     </Reference>
+    <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.Security" />
     <Reference Include="System.Web.DynamicData" />
     <Reference Include="System.Web.Entity" />
     <Reference Include="System.Web.ApplicationServices" />
@@ -177,25 +182,52 @@
     <Compile Include="Controllers\PortalController.cs" />
     <Compile Include="Controllers\PortfolioController.cs" />
     <Compile Include="CustomExceptions\DataConnectionNotConfiguredException.cs" />
-    <Compile Include="Data\SiteAuth.designer.cs">
+    <Compile Include="Data\AuthDB.Context.cs">
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>
-      <DependentUpon>SiteAuth.dbml</DependentUpon>
+      <DependentUpon>AuthDB.Context.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\AuthDB.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>AuthDB.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\AuthDB.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>AuthDB.edmx</DependentUpon>
+    </Compile>
+    <Compile Include="Data\UserSession.cs">
+      <DependentUpon>AuthDB.tt</DependentUpon>
     </Compile>
     <Compile Include="Global.asax.cs">
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
+    <Compile Include="Utils\Abstractions\ApiMediator.cs" />
     <Compile Include="Utils\PortfolioApiMediator.cs" />
     <Compile Include="Models\AdminModel.cs" />
     <Compile Include="Models\LoginModel.cs" />
     <Compile Include="Models\PortfolioModel.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Utils\SessionManager.cs" />
-    <Compile Include="Utils\ThreadManager.cs" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="App_Data\Credentials.crd.xml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <Content Include="App_Data\ApiConns.xml" />
     <Content Include="Content\bootstrap.css" />
     <Content Include="Content\bootstrap.min.css" />
+    <Content Include="Data\AuthDB.Context.tt">
+      <Generator>TextTemplatingFileGenerator</Generator>
+      <DependentUpon>AuthDB.edmx</DependentUpon>
+      <LastGenOutput>AuthDB.Context.cs</LastGenOutput>
+    </Content>
+    <Content Include="Data\AuthDB.tt">
+      <Generator>TextTemplatingFileGenerator</Generator>
+      <DependentUpon>AuthDB.edmx</DependentUpon>
+      <LastGenOutput>AuthDB.cs</LastGenOutput>
+    </Content>
     <Content Include="favicon.ico" />
     <Content Include="fonts\glyphicons-halflings-regular.svg" />
     <Content Include="Global.asax" />
@@ -205,14 +237,13 @@
     <Content Include="ApplicationInsights.config">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="Data\SiteAuth.dbml">
-      <Generator>MSLinqToSQLGenerator</Generator>
-      <LastGenOutput>SiteAuth.designer.cs</LastGenOutput>
-      <SubType>Designer</SubType>
+    <EntityDeploy Include="Data\AuthDB.edmx">
+      <Generator>EntityModelCodeGenerator</Generator>
+      <LastGenOutput>AuthDB.Designer.cs</LastGenOutput>
+    </EntityDeploy>
+    <Content Include="Data\AuthDB.edmx.diagram">
+      <DependentUpon>AuthDB.edmx</DependentUpon>
     </Content>
-    <None Include="Data\SiteAuth.dbml.layout">
-      <DependentUpon>SiteAuth.dbml</DependentUpon>
-    </None>
     <None Include="Scripts\jquery-1.10.2.intellisense.js" />
     <Content Include="Scripts\jquery-1.10.2.js" />
     <Content Include="Scripts\jquery-1.10.2.min.js" />
@@ -241,9 +272,7 @@
     <Content Include="Views\Portfolio\Index.cshtml" />
     <Content Include="Views\Portal\Admin.cshtml" />
   </ItemGroup>
-  <ItemGroup>
-    <Folder Include="App_Data\" />
-  </ItemGroup>
+  <ItemGroup />
   <ItemGroup>
     <Content Include="fonts\glyphicons-halflings-regular.woff" />
   </ItemGroup>
@@ -259,6 +288,7 @@
   </ItemGroup>
   <ItemGroup>
     <Service Include="{3259AA49-8AA1-44D3-9025-A0B520596A8C}" />
+    <Service Include="{508349B6-6B84-4DF5-91F0-309BEEBAD82D}" />
   </ItemGroup>
   <PropertyGroup>
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">10.0</VisualStudioVersion>

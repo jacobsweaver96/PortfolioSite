@@ -1,21 +1,42 @@
-﻿using SandyModels.Models;
+﻿using PortfolioSite.Utils.Abstractions;
+using RestSharp;
+using SandyModels.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Web;
 
 namespace PortfolioSite.Utils
 {
-    public static class PortfolioApiMediator
+    public class PortfolioApiMediator : ApiMediator
     {
+        public PortfolioApiMediator(string hostUrl, string apiKey) : base(hostUrl, apiKey) { }
+
+        public PortfolioApiMediator(string hostUrl, string apiKey, List<KeyValuePair<string, string>> defaultHeaders) : base(hostUrl, apiKey, defaultHeaders) { }
+
         /// <summary>
         /// Gets a user from the portfolio api
         /// </summary>
         /// <param name="userName">The username of the user that is to be retrieved</param>
         /// <returns>The user</returns>
-        public static User GetUser(string userName)
+        public async Task<IRestResponse<User>> GetUserResponse(string userName)
         {
-            throw new NotImplementedException();
+            var endPointBuilder = new EndpointBuilder();
+
+            endPointBuilder.AddSegment("Users");
+            endPointBuilder.AddSegment(userName);
+
+            var endPoint = endPointBuilder.GetEndpoint();
+
+            var queryParams = new List<KeyValuePair<string, string>>
+            {
+                new KeyValuePair<string, string>("includeEndpoints", "false")
+            };
+
+            var response = await SendRequest<User>(endPoint, Method.GET, QueryParams: queryParams);
+
+            return response;
         }
 
         /// <summary>
@@ -25,9 +46,14 @@ namespace PortfolioSite.Utils
         /// <param name="hashedPass">The new hashed and salted user password</param>
         /// <param name="salt">The new salt</param>
         /// <returns>Success indicator</returns>
-        public static bool ChangeUserPassword(int userId, string hashedPass, string salt)
+        public bool ChangeUserPassword(string userName, string hashedPass, string salt)
         {
             throw new NotImplementedException();
+        }
+
+        protected override void SetRequestAuthenticator(IRestRequest request)
+        {
+            request.AddHeader("Authentication", $"Basic {ApiKey}");
         }
     }
 }
