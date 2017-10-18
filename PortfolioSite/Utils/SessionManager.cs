@@ -219,14 +219,11 @@ namespace PortfolioSite.Utils
                 return false;
             }
 
-            var result = await ContextExec((ctx) =>
+            var result = await ContextExec(async (ctx) =>
             {
-                return new Task<bool>(() =>
-                {
-                    var session = ctx.UserSessions.SingleOrDefault(v => v.Token == authToken);
+                var session = await ctx.UserSessions.SingleOrDefaultAsync(v => v.Token == authToken);
 
-                    return session != null && !IsSessionExpired(session);
-                });
+                return session != null && !IsSessionExpired(session);
             });
 
             return result;
